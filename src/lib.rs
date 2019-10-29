@@ -8,7 +8,7 @@ use std::io::{self, Read, Write};
 use std::path::Path;
 
 use bytes::{Buf, BufMut};
-use futures::{stream::Stream, Async, Poll};
+use futures::{stream::Stream, Async, Future, Poll};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::reactor::Handle;
 
@@ -230,16 +230,26 @@ pub struct IpcConnection {
 
 impl IpcConnection {
     /// Make new connection using the provided path and running event pool.
+    #[cfg(not(windows))]
+    pub fn connect<P: AsRef<Path>>(path: P) ->
+    impl Future<Item = IpcConnection, Error = io::Error> {
+        Self::connect_inner(path.as_ref())
+            .map(|stream| IpcConnection {
+                inner: stream,
+            })
+    }
+
+    #[cfg(windows)]
     pub fn connect<P: AsRef<Path>>(path: P, handle: &Handle) -> io::Result<IpcConnection> {
         Ok(IpcConnection {
             inner: Self::connect_inner(path.as_ref(), handle)?,
         })
     }
 
-    #[cfg(unix)]
-    fn connect_inner(path: &Path, _handle: &Handle) -> io::Result<tokio_uds::UnixStream> {
-        use futures::Future;
-        tokio_uds::UnixStream::connect(&path).wait()
+    #[cfg(not(windows))]
+    fn connect_inner(path: &Path) ->
+    impl Future<Item = tokio_uds::UnixStream, Error = io::Error> {
+        tokio_uds::UnixStream::connect(&path)
     }
 
     #[cfg(windows)]
